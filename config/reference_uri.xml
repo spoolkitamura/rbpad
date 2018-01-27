@@ -1,0 +1,9 @@
+<references>
+  <!-- Online -->
+  <ref_ruby   uri='https://docs.ruby-lang.org/ja/latest/doc/index.html' />
+  <ref_dxruby uri='http://mirichi.github.io/dxruby-doc/index.html' />
+
+  <!-- Local(sample) -->
+  <!-- ref_ruby   uri='./@help/rubyrefm-remix-2.2.chm' / -->
+  <!-- ref_dxruby uri='./@help/dxruby-doc-gh-pages/index.html' / -->
+</references>
