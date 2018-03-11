@@ -7,14 +7,18 @@
 
     Version :
       0.5.0 (2018/01/28)
+      0.6.0 (2018/03/10)
 
 =end
 
+$VER = "0.6.0"
 
 require 'gtk2'
 require 'drb/drb'
 require "tempfile"
 require 'rexml/document'
+
+require_relative 'rbpad_conf'
 
 
 # スクロールバー付きテキストバッファ
@@ -58,49 +62,135 @@ class Widget_Page < Widget_ScrolledText
                                          weight:      600           # SEMIBOLD
                                         })
 
-    _display_status
+    @undo_stack = Array.new   # UNDO(元に戻す)用のスタック
+    @redo_stack = Array.new   # REDO(やり直し)用のスタック
+    @undo_swt   = true        # UNDO処理制御
+
+    _display_status           # ステータス表示
 
     @view.signal_connect("button_release_event") do
+      # マウスポインティングに伴うカーソル移動の際に発行されるシグナル
       _display_status
-      false                # trueだとマウスボタンによる範囲選択動作が連動してしまう
+      false                   # trueだとマウスボタンによる範囲選択動作が連動してしまう
     end
 
     @view.signal_connect_after("move_cursor") do |widget, step, count, extend_selection|
-      # マウス移動後に発行されるシグナル
+      # カーソル移動後に発行されるシグナル
       _display_status
     end
 
 
-    @view.buffer.signal_connect("insert_text") do |widget, iter, text, len|
+    @view.signal_connect("key-press-event") do |widget, event|
+      # キー押下シグナル
+      if event.state.control_mask? and event.keyval == Gdk::Keyval::GDK_z
+        _undo   # [Ctrl]-[Z] (UNDO処理)
+      end
+
+      if event.state.control_mask? and event.keyval == Gdk::Keyval::GDK_y
+        _redo   # [Ctrl]-[Y] (REDO処理)
+      end
+
+      if event.keyval == Gdk::Keyval::GDK_Return
+        # 改行([Enter])時のインデント処理
+        mark = @view.buffer.selection_bound              # カーソル位置のマークを取得
+        iter = @view.buffer.get_iter_at_mark(mark)       # マーク位置のiterを取得
+        iter_end = iter.clone                            # 現在位置を示すiterを保持
+        iter.backward_chars(iter_end.line_offset)        # 現在行の先頭位置に移動
+        line_str = iter.get_text(iter_end).chomp         # 現在行の文字列
+        match = /^ */.match(line_str)                    # 現在行の文字列に含まれる先頭からの空白文字列
+      # puts "[#{match[0]}]"
+        @view.buffer.insert_at_cursor("\n" + match[0])   # 改行("\n")後に前行と同じ数の空白文字を挿入(インデント揃え)
+        mark = @view.buffer.selection_bound              # カーソル位置のマークを取得
+        @view.scroll_to_mark(mark, 0, false, 0, 1)       # マークまで移動
+        true                                             # falseだと"\n"が重複
+      end
+    end
+
+    @view.buffer.signal_connect("delete_range") do |widgwt, start_iter, end_iter|
+      # テキスト削除前に発行されるシグナル
+      if @undo_swt
+        # UNDO用スタックに追加
+        text = @view.buffer.get_text(start_iter, end_iter)
+        @undo_stack << { :type         => :delete_range,
+                         :offset_start => start_iter.offset,
+                         :offset_end   => end_iter.offset,
+                         :text         => text
+                       }
+#       @undo_stack.each_with_index {|x, i| puts "#{i} #{x}"}
+      end
+    end
+
+    @view.buffer.signal_connect("insert_text") do |widget, iter, text, length|
       # テキスト挿入前に発行されるシグナル
-      @indent_swt = (/\n/.match(text) ? :ON : :OFF)  # 改行コードを含む場合のみインデント処理を有効化([DEL]キー対象外)
-      _display_status
+      if @undo_swt
+        # UNDO用スタックに追加
+        @undo_stack << { :type         => :insert_text,
+                         :offset_start =>  iter.offset,
+                         :offset_end   =>  iter.offset + text.length,   # (ブロック引数のlengthだと日本語で文字数が異なる)
+                         :text         =>  text
+                       }
+#       @undo_stack.each_with_index {|x, i| puts "#{i} #{x}"}
+        @redo_stack.clear                                # REDO用スタックをクリア
+      end
     end
 
     @view.buffer.signal_connect("changed") do |widget|
       # バッファ変更後に発行されるシグナル
       # puts "changed"
-      @status = :UNSAVED                                # 編集ステータスを変更
-
-      # 改行時のインデント処理
-      if @indent_swt == :ON
-        mark = @view.buffer.selection_bound             # カーソル位置のマークを取得
-        iter = @view.buffer.get_iter_at_mark(mark)
-        if iter.starts_line?                            # 行頭の場合
-          iter_end = iter.clone                         # 改行後の現在位置を示すiter
-          iter.backward_line                            # 前行の先頭位置を示すiter
-          line_str = iter.get_text(iter_end).chomp      # 前行の文字列
-          match = /^ */.match(line_str)                 # 前行の文字列に含まれる先頭からの空白文字列
-          @view.buffer.insert_at_cursor(match[0])       # カーソル位置に空白文字列を挿入(インデント揃え)
-          #puts "[#{line_str}]"
-          #puts "[#{match[0]}]"
-        end
-        @indent_swt = :OFF
-      end
-      _tokenize                                         # タグ設定用の字句解析
+      @status = :UNSAVED                                 # 編集ステータスを変更
+      _tokenize                                          # タグ設定用の字句解析
       _display_status
     end
   end
+
+  # UNDO/REDO処理で操作対象を削除
+  private def _do_del(action)
+    start_iter = @view.buffer.get_iter_at_offset(action[:offset_start])
+    end_iter   = @view.buffer.get_iter_at_offset(action[:offset_end])
+    @undo_swt = false
+    @view.buffer.delete(start_iter, end_iter)
+    @undo_swt = true
+    @view.buffer.place_cursor(start_iter)
+    @view.scroll_mark_onscreen(@view.buffer.get_mark("insert"))
+  end
+
+  # UNDO/REDO処理で操作対象を挿入
+  private def _do_ins(action)
+    start_iter = @view.buffer.get_iter_at_offset(action[:offset_start])
+    @undo_swt = false
+    @view.buffer.insert(start_iter, action[:text])
+    @undo_swt = true
+    @view.buffer.place_cursor(start_iter)
+    @view.scroll_mark_onscreen(@view.buffer.get_mark("insert"))
+  end
+
+  # 元に戻す処理(UNDO)
+  private def _undo
+    return if @undo_stack.size == 0
+    action = @undo_stack.pop
+    case action[:type]
+    when :insert_text
+      _do_del(action)   # 元に戻す(操作対象を削除)
+    when :delete_range
+      _do_ins(action)   # 元に戻す(操作対象を挿入)
+    end
+    @redo_stack << action
+  end
+
+  # やり直し処理(REDO)
+  private def _redo
+    return if @redo_stack.size == 0
+    action = @redo_stack.pop 
+    case action[:type]
+    when :insert_text
+      _do_ins(action)   # やり直し(操作対象を挿入)
+    when :delete_range
+      _do_del(action)   # やり直し(操作対象を削除)
+    end
+    @undo_stack << action
+  end
+
+
 
   # カーソル位置にインデント付きでテキストを挿入
   def insert_block(text)
@@ -129,7 +219,8 @@ class Widget_Page < Widget_ScrolledText
   # ファイル読み込み
   def load(filename, template = false)
     File.open(filename, "rb:utf-8") do |file|
-      content = file.read
+      # 不正バイトを置換文字(U+FFFD)に置き換え
+      content = file.read.scrub
       @view.buffer.insert(@view.buffer.end_iter, content)
     end
 
@@ -246,10 +337,16 @@ class Widget_Editor < Gtk::Notebook
     editor_page.insert_block(statement)
   end
 
+  # 構文挿入(新規ページ)
+  def load_block(statement)                                   # 新規ページ追加
+    editor_page = _append_page
+    editor_page.insert_block(statement)
+  end
+
   # 指定ディレクトリに一時ファイル保存
   def save_tmp(dirname)
     editor_page = self.get_nth_page(self.page)                # 当該ページの child widget
-    basename = "rs_#{Utility.get_uniqname}.rb"                # ファイル名(ランダム)
+    basename = "rs_#{Utility::get_uniqname}.rb"               # ファイル名(ランダム)
     filename = "#{dirname}/#{basename}"                       # フルパス
     editor_page.save(filename, true)                          # ファイル保存
     return basename
@@ -270,13 +367,6 @@ class Widget_Editor < Gtk::Notebook
     dirname = File.dirname(filename)
     editor_page = _append_page(dirname, filename, tabname)
     editor_page.load(filename)
-    __debug_status
-  end
-
-  # テンプレート読込み
-  def load_template(filename)
-    editor_page = _append_page
-    editor_page.load(filename, true)
     __debug_status
   end
 
@@ -383,24 +473,13 @@ class Pad < Gtk::Window
     # DRb用ポート番号
     @drb_portno = 49322
 
-    # UIマネージャ用メニュー
-    menu = _define_menu
-    actions_menubar = _define_actions_menubar      # アクション定義(メニューバー)
-    actions_toolbar = _define_actions_toolbar      # アクション定義(ツールバー)
+    # スレッド間通信用キュー
+    @q = Queue.new
 
     # UIマネージャ
-    uimanager = Gtk::UIManager.new
-
-    toolbar_group = Gtk::ActionGroup.new("toolbar_group")
-    toolbar_group.add_actions(actions_toolbar)
-    uimanager.insert_action_group(toolbar_group, 0)
-
-    menubar_group = Gtk::ActionGroup.new("menubar_group")
-    menubar_group.add_actions(actions_menubar)
-    uimanager.insert_action_group(menubar_group, 0)
-
-    self.add_accel_group(uimanager.accel_group)   # ショートカットキー有効化
-    uimanager.add_ui(menu)
+    @uimanager = Gtk::UIManager.new
+    _select_conf                                   # メニュー設定
+    self.add_accel_group(@uimanager.accel_group)   # ショートカットキー有効化
 
     # コンソール(出力用)
     @console_output = Widget_OutputScreen.new
@@ -442,14 +521,15 @@ class Pad < Gtk::Window
 
     # コンテナ
     vbox_all = Gtk::VBox.new(false, 0)
-    vbox_all.pack_start(uimanager.get_widget("/MenuBar"), false, true, 0)
-    vbox_all.pack_start(uimanager.get_widget("/ToolBar"), false, true, 0)
+    vbox_all.pack_start(@uimanager.get_widget("/MenuBar"), false, true, 0)
+    vbox_all.pack_start(@uimanager.get_widget("/ToolBar"), false, true, 0)
     vbox_all.pack_start(vpaned, true, true, 0)
     vbox_all.pack_start(hbox, false, false, 0)
 
     # ウィンドウ設定
     @editor.page_focus   # エディタのページにフォーカスをセット
     self.add(vbox_all)
+    self.set_window_position(Gtk::Window::POS_CENTER)
     self.show_all
 
     self.signal_connect("delete_event") do
@@ -460,15 +540,18 @@ class Pad < Gtk::Window
     self.signal_connect("destroy") do
       _quit
     end
+
   end
 
-  # メニュー定義
+  # メニュー構成定義
   private def _define_menu
     content = IO.read("#{File.expand_path(File.dirname(__FILE__))}/config/menubar.xml")
+    content.gsub!(/\<\/*menubar\>\n/, '')   # 第１階層の「<menubr></menubar>」を除去
     "<ui>
       <menubar name='MenuBar'>
         <menu action='file'>
           <menuitem action='run' />
+          <menuitem action='kill' />
           <separator />
           <menuitem action='new' />
           <menuitem action='open' />
@@ -483,6 +566,13 @@ class Pad < Gtk::Window
         <menu action='help'>
           <menuitem action='ref_ruby' />
           <menuitem action='ref_dxruby' />
+          <separator />
+          <menuitem action='ref_textbook' />
+          <menuitem action='browse' />
+          <menu action='conf'>
+            <menuitem action='edit_conf' />
+            <menuitem action='select_conf' />
+          </menu>
           <separator />
           <menuitem action='ruby_ver' />
           <separator />
@@ -508,27 +598,33 @@ class Pad < Gtk::Window
     end
 
     actions = [
-      ["file",       nil,                 "ファイル(_F)"],
-      ["run",        Gtk::Stock::EXECUTE, "プログラムを実行する",          "<control>R",        nil, Proc.new{ _exec }],
-      ["new",        Gtk::Stock::NEW,     "プログラムを新しく作る",        nil,                 nil, Proc.new{ _new }],
-      ["open",       Gtk::Stock::OPEN,    "プログラムを読みこむ...",       nil,                 nil, Proc.new{ _open }],
-      ["save",       Gtk::Stock::SAVE,    "プログラムを保存する",          nil,                 nil, Proc.new{ _save }],
-      ["saveas",     Gtk::Stock::SAVE_AS, "プログラムを別名で保存する...", "<shift><control>S", nil, Proc.new{ _save_as }],
-      ["close",      Gtk::Stock::CLOSE,   "プログラムを閉じる",            nil,                 nil, Proc.new{ _close }],
-      ["exit",       Gtk::Stock::QUIT,    "rbpadを終了する",               nil,                 nil, Proc.new{ _close_page_all }],
+      ["file",         nil,                    "ファイル(_F)"],
+      ["run",          Gtk::Stock::EXECUTE,    "プログラムを実行する",          "<control>R",        nil, Proc.new{ _exec }],
+      ["kill",         Gtk::Stock::MEDIA_STOP, "実行中のプログラムを止める",    nil,                 nil, Proc.new{ _kill }],
+      ["new",          Gtk::Stock::NEW,        "プログラムを新しく作る",        nil,                 nil, Proc.new{ _new }],
+      ["open",         Gtk::Stock::OPEN,       "プログラムを読みこむ...",       nil,                 nil, Proc.new{ _open }],
+      ["save",         Gtk::Stock::SAVE,       "プログラムを保存する",          nil,                 nil, Proc.new{ _save }],
+      ["saveas",       Gtk::Stock::SAVE_AS,    "プログラムを別名で保存する...", "<shift><control>S", nil, Proc.new{ _save_as }],
+      ["close",        Gtk::Stock::CLOSE,      "プログラムを閉じる",            nil,                 nil, Proc.new{ _close }],
+      ["exit",         Gtk::Stock::QUIT,       "rbpadを終了する",               nil,                 nil, Proc.new{ _close_page_all }],
 
-      ["help",       nil,                 "ヘルプ(_H)"],
-      ["ref_ruby",   nil,                 "Rubyリファレンス",              nil,                 nil, Proc.new{ _startcmd(uri_ref_ruby) }],
-      ["ref_dxruby", nil,                 "DXRubyリファレンス",            nil,                 nil, Proc.new{ _startcmd(uri_ref_dxruby) }],
-      ["ruby_ver",   nil,                 "Rubyバージョン",                nil,                 nil, Proc.new{ _ruby_ver }],
-      ["about",      nil,                 "rbpadについて",                 nil,                 nil, Proc.new{ _about }],
+      ["help",         nil,                    "ヘルプ(_H)"],
+      ["ref_ruby",     nil,                    "Rubyリファレンス",              nil,                 nil, Proc.new{ _startcmd(uri_ref_ruby) }],
+      ["ref_dxruby",   nil,                    "DXRubyリファレンス",            nil,                 nil, Proc.new{ _startcmd(uri_ref_dxruby) }],
+      ["ruby_ver",     nil,                    "Rubyバージョン",                nil,                 nil, Proc.new{ _ruby_ver }],
+      ["ref_textbook", nil,                    "テキストブック [*]",            nil,                 nil, Proc.new{ _yet }],
+      ["browse",       nil,                    "サンプルプログラム [*]",        nil,                 nil, Proc.new{ _yet }],
+      ["conf",         nil,                    "メニュー設定"],
+      ["edit_conf",    nil,                    "メニュー内容編集...",           nil,                 nil, Proc.new{ _edit_conf }],
+      ["select_conf",  nil,                    "メニュー切替え",                nil,                 nil, Proc.new{ _select_conf }],
+      ["about",        nil,                    "rbpadについて",                 nil,                 nil, Proc.new{ _about }],
     ]
 
     # XMLファイルからの設定情報を反映(ユーザカスタマイズ用)
     File.open("#{File.expand_path(File.dirname(__FILE__))}/config/menubar_actions.xml") do |fp|
       content = REXML::Document.new(fp)
 
-      content.elements.each('menubar_action/branch') do |e|        # 親または中間枝
+      content.elements.each('menubar_action/branch') do |e|        # メニュー(親または中間ノード)
         actions << [e.attributes['id'],
                     nil, 
                     e.attributes['desc']]
@@ -543,13 +639,13 @@ class Pad < Gtk::Window
                     Proc.new{ _insert_statement(e.text.gsub(/^\n/, ''))}]
       end
 
-      content.elements.each('menubar_action/template') do |e|      # テンプレート読み込み対象ファイル
+      content.elements.each('menubar_action/template') do |e|      # テンプレート項目
         actions << [e.attributes['id'],
                     nil,
                     e.attributes['desc'],
                     e.attributes['acckey'],
                     nil,
-                    Proc.new{ _load_template(e.text.gsub(/^\n/, '').chomp)}]
+                    Proc.new{ _load_block(e.text.sub(/^\n/, '').chomp)}]   # 冒頭に挿入される改行のみを除去
       end
     end
 
@@ -563,51 +659,105 @@ class Pad < Gtk::Window
     ]
   end
 
-
   # コードの実行
   private def _exec
-    thread = Thread.start do
-      dirname, basename, tabname, status = @editor.get_page_properties
-      if dirname and Dir.exist?(dirname)
-        # すでに既存ディレクトリ上にファイルが存在している場合
-        run_dirname  = dirname                           # 当該ディレクトリ上で実行
-        run_filename = @editor.save_tmp(dirname)
-      else
-        tmp_dirname  = Dir.mktmpdir(["ruby_", "_tmp"])
-        run_dirname  = tmp_dirname                       # 一時ディレクトリ上で実行
-        run_filename = @editor.save_tmp(tmp_dirname)
-      end
-
-      # DRb用の一時ファイルを実行ディレクトリに保存
-      required_filename = _save_required_file(run_dirname)
-
-      #puts "tmp_dirname       : #{tmp_dirname}"
-      #puts "run_dirname       : #{run_dirname}"
-      #puts "run_filename      : #{run_filename}"
-      #puts "required_filename : #{required_filename}"
-
-      # 実行コマンド生成
-      # cmd = %Q{ruby -E UTF-8 -r #{required_filename} -C #{run_dirname} #{run_filename}}               # -C (Ruby 2.2以降では日本語ディレクトリの際に動作しない)
-      cmd = %Q{cd /d "#{run_dirname}" & ruby -E UTF-8 -r "#{required_filename}" #{run_filename}}
-      puts cmd
-
-      # 実行
-      @console_output.add_tail("> start: #{tabname} (#{Time.now.strftime('%H:%M:%S')})\n", "info")      # 最下行に挿入
-      @console_output.scroll_tail                                                                       # 最下行までスクロール
-      IO.popen(cmd, err: [:child, :out]) do |pipe|                                                      # 標準エラー出力を標準出力にマージ
-        pipe.each do |line|
-          line.gsub!(run_filename, tabname)                                                             # 出力用に一時ファイル名をタブ名に置換
-          @console_output.add_tail(line, "result")                                                      # 最下行に挿入
-          @console_output.scroll_tail                                                                   # 最下行までスクロール
+    @thread = Thread.start do
+      begin
+        dirname, basename, tabname, status = @editor.get_page_properties
+        if dirname and Dir.exist?(dirname)
+          # すでに既存ディレクトリ上にファイルが存在している場合
+          run_dirname  = dirname                           # 当該ディレクトリ上で実行
+          run_filename = @editor.save_tmp(dirname)
+        else
+          tmp_dirname  = Dir.mktmpdir(["ruby_", "_tmp"])
+          run_dirname  = tmp_dirname                       # 一時ディレクトリ上で実行
+          run_filename = @editor.save_tmp(tmp_dirname)
         end
-      end
-      @console_output.add_tail("> end  : #{tabname} (#{Time.now.strftime('%H:%M:%S')})\n\n", "info")    # 最下行に挿入
-      @console_output.scroll_tail                                                                       # 最下行までスクロール
 
-      # 一時ディレクトリ削除(再帰的に一時ディレクトリ内のファイルも削除)
-      FileUtils.remove_entry_secure "#{run_dirname}/#{run_filename}"
-      FileUtils.remove_entry_secure required_filename
-      FileUtils.remove_entry_secure tmp_dirname if tmp_dirname
+        # DRb用の一時ファイルを実行ディレクトリに保存
+        required_filename = _save_required_file(run_dirname)
+
+        #puts "tmp_dirname       : #{tmp_dirname}"
+        #puts "run_dirname       : #{run_dirname}"
+        #puts "run_filename      : #{run_filename}"
+        #puts "required_filename : #{required_filename}"
+
+        # 実行コマンド生成
+        # cmd = %Q{ruby -E UTF-8 -r #{required_filename} -C #{run_dirname} #{run_filename}}               # -C (Ruby 2.2以降では日本語ディレクトリの際に動作しない)
+        # cmd = %Q{cd /d "#{run_dirname}" & ruby -E UTF-8 -r "#{required_filename}" #{run_filename}}      # (プロセスkillした場合に一時ディレクトリが削除できない)
+        cmd = %Q{ruby -E UTF-8 -r "#{required_filename}" #{run_filename}}
+        puts cmd
+
+        # メニューなど無効化
+        @uimanager.get_action("/ToolBar/Exec").sensitive = false
+        @uimanager.get_action("/MenuBar/file/run").sensitive = false
+        @uimanager.get_action("/MenuBar/file/kill").sensitive = true   # プログラム停止メニューは有効化
+        # 画面リードオンリーに?!■
+
+        # 実行開始メッセージ
+        @console_output.add_tail("> start: #{tabname} (#{Time.now.strftime('%H:%M:%S')})\n", "info")      # 最下行に挿入
+        @console_output.scroll_tail                                                                       # 最下行までスクロール
+
+        # カレントディレクトリの保存と移動(実行中はカレントディレクトリを移動、実行終了後に復帰)
+        current_dir = Dir.pwd
+        Dir.chdir(run_dirname)
+
+        # 実行
+        @q << io = IO.popen(cmd, err: [:child, :out])                                                     # 標準エラー出力を標準出力にマージ
+        io.each do |line|
+          line.gsub!(run_filename, tabname)                                                               # 出力用に一時ファイル名をタブ名に置換
+          @console_output.add_tail(line, "result")                                                        # 最下行に挿入
+          @console_output.scroll_tail                                                                     # 最下行までスクロール
+        end
+
+      ensure
+        # IOクローズ
+        io.close
+
+        # カレントディレクトリ復帰
+        Dir.chdir(current_dir)
+
+        # 実行終了メッセージ
+        @console_output.add_tail("> end  : #{tabname} (#{Time.now.strftime('%H:%M:%S')})\n\n", "info")    # 最下行に挿入
+        @console_output.scroll_tail                                                                       # 最下行までスクロール
+
+        # メニューなど有効化
+        @uimanager.get_action("/ToolBar/Exec").sensitive = true
+        @uimanager.get_action("/MenuBar/file/run").sensitive = true
+        @uimanager.get_action("/MenuBar/file/kill").sensitive = false
+        # 画面リードオンリー解除?!■
+
+        # 一時ディレクトリ削除(再帰的に一時ディレクトリ内のファイルも削除)
+        FileUtils.remove_entry_secure "#{run_dirname}/#{run_filename}"
+        FileUtils.remove_entry_secure required_filename
+        puts "Thread Terminate... #{tmp_dirname}"
+        FileUtils.remove_entry_secure tmp_dirname if tmp_dirname                                          # カレントディレクトリから離れないと削除できない
+        puts "Thread Terminate..."
+
+        # キューをクリア
+        @q.clear
+      end
+    end
+  end
+
+  # 実行中スレッドの終了
+  private def _kill
+    pid = (@q.empty? ? -1 : @q.pop.pid)
+    if pid > 0 and @thread
+      p pid
+      p @thread
+      puts "kill tprocess => " + pid.to_s
+      system("taskkill /f /pid #{pid}")        # プロセスの強制終了
+      # Process.kill("KILL", pid)              # Windowsでは無効...
+      sleep 0.1
+
+      @thread.kill                             # スレッドを終了
+      @thread = nil
+
+      # メニューなど有効化
+      @uimanager.get_action("/MenuBar/file/run").sensitive = true
+      @uimanager.get_action("/ToolBar/Exec").sensitive = true
+      # 画面リードオンリー解除?!■
     end
   end
 
@@ -621,7 +771,7 @@ class Pad < Gtk::Window
       $stdin, $in = IO.pipe
       DRb.start_service("druby://localhost:#{@drb_portno}", $in)
     EOS
-    basename = "rq_#{Utility.get_uniqname}.rb"
+    basename = "rq_#{Utility::get_uniqname}.rb"
     tmpfilepath = "#{tmp_dirname}/#{basename}"
     File.open(tmpfilepath, "w") do |fp|
       fp.puts script
@@ -632,7 +782,8 @@ class Pad < Gtk::Window
   # Rubyバージョン表示
   private def _ruby_ver
     thread = Thread.start do
-      IO.popen("ruby -v & gem list --quiet --local gtk2 dxruby", err: [:child, :out]) do |pipe|
+#     IO.popen("ruby -v & gem list --quiet --local gtk2 dxruby", err: [:child, :out]) do |pipe|
+      IO.popen("ruby -v", err: [:child, :out]) do |pipe|
         pipe.each do |line|
           @console_output.add_tail(line)             # 最下行に挿入
         end
@@ -645,11 +796,20 @@ class Pad < Gtk::Window
   # rbpadについて
   private def _about
     msg = <<-"EOS".gsub(/^\s+/, '')
-      rbpad.rb (ver. 0.5.0)
+      rbpad.rb (ver. #{$VER})
       Copyright (c) 2018 Koki Kitamura
-      This program is licenced under the same licence as Ruby-GNOME2.
+      This program is licensed under the same license as Ruby-GNOME2.
     EOS
     @console_output.add_tail(msg + "\n")   # 最下行に挿入
+    @console_output.scroll_tail            # 最下行までスクロール
+  end
+
+  # 準備中
+  private def _yet
+    msg = <<-"EOS".gsub(/^\s+/, '')
+      準備中...
+    EOS
+    @console_output.add_tail(msg)          # 最下行に挿入
     @console_output.scroll_tail            # 最下行までスクロール
   end
 
@@ -663,6 +823,8 @@ class Pad < Gtk::Window
       [Gtk::Stock::OK, Gtk::Dialog::RESPONSE_ACCEPT],
       [Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_CANCEL]
     )
+    # カレントディレクトリをデスクトップに指定
+    dialog.current_folder = ENV["USERPROFILE"] + "\\Desktop"
 
     # ファイルフィルターの設定
     filter1 = Gtk::FileFilter.new
@@ -709,6 +871,8 @@ class Pad < Gtk::Window
       [Gtk::Stock::OK,     Gtk::Dialog::RESPONSE_ACCEPT],
       [Gtk::Stock::CANCEL, Gtk::Dialog::RESPONSE_CANCEL]
     )
+    # カレントディレクトリをデスクトップに指定
+    dialog.current_folder = ENV["USERPROFILE"] + "\\Desktop"
     # すでに同名のファイルが存在する場合、上書きするかどうかを確認
     dialog.do_overwrite_confirmation = true
     dialog.signal_connect("confirm_overwrite") do |fc|
@@ -759,11 +923,6 @@ class Pad < Gtk::Window
     return res
   end
 
-  # テンプレート読み込み
-  private def _load_template(basename)
-    @editor.load_template("#{File.expand_path(File.dirname(__FILE__))}/template/#{basename}")
-  end
-
   # 外部リファレンス表示
   private def _startcmd(uri)
     if uri =~ /^http/
@@ -774,7 +933,6 @@ class Pad < Gtk::Window
     end
 
     Thread.start do
-#      cmd = "start #{File.dirname(__FILE__)}/help/#{refname}"   
       p cmd
       system(cmd)        # 既定のアプリケーションで開く
     end
@@ -797,6 +955,7 @@ class Pad < Gtk::Window
     until @editor.n_pages <= 0
       return true if _close_page == :CANCEL    # trueなら "delete_event"([x])からのコール時に "destroy"されない
     end
+    _kill
     _quit
   end
 
@@ -809,15 +968,15 @@ class Pad < Gtk::Window
   private def _close_page
     dirname, basename, tabname, status = @editor.get_page_properties
     if status == :UNSAVED
-       # 未保存時はダイアログ表示
-       res = _draw_confirm_dialog("rbpad", " #{tabname} はまだ保存されていません。閉じる前に保存しますか？", self)
-       if    res == Gtk::Dialog::RESPONSE_YES
-         _save_as
-       elsif res == Gtk::Dialog::RESPONSE_NO
-         @editor.close
-       else
-         return :CANCEL
-       end
+      # 未保存時はダイアログ表示
+      res = _draw_confirm_dialog("rbpad", " #{tabname} はまだ保存されていません。閉じる前に保存しますか？", self)
+      if    res == Gtk::Dialog::RESPONSE_YES
+        _save_as
+      elsif res == Gtk::Dialog::RESPONSE_NO
+        @editor.close
+      else
+        return :CANCEL
+      end
     else
       # 保存済みまたは空の場合はそのまま閉じる
       @editor.close
@@ -829,6 +988,52 @@ class Pad < Gtk::Window
     @editor.insert_block(statement)
   end
 
+  # 構文挿入(新規ページ)
+  private def _load_block(statement)
+    @editor.load_block(statement)
+  end
+
+  # メニューファイルの編集(rbpad_conf.rb)
+  private def _edit_conf
+    begin
+      @config_editor.present                          # 手前に表示
+    rescue
+      @config_editor = ConfigEditor.new               # メニューファイルエディタ起動
+      @config_editor.present                          # 手前に表示
+    end
+  end
+
+  # メニューファイルの選択(メニューバー変更内容反映)
+  private def _select_conf
+    puts "@merge_id = #{@merge_id}"
+
+    menu            = _define_menu                 # メニュー構成定義
+    actions_menubar = _define_actions_menubar      # アクション定義(メニューバー)
+    actions_toolbar = _define_actions_toolbar      # アクション定義(ツールバー)
+
+    menubar_group = Gtk::ActionGroup.new("menubar_group")
+    menubar_group.add_actions(actions_menubar)
+    @uimanager.insert_action_group(menubar_group, 0)
+
+    toolbar_group = Gtk::ActionGroup.new("toolbar_group")
+    toolbar_group.add_actions(actions_toolbar)
+    @uimanager.insert_action_group(toolbar_group, 0)
+
+    # uiを削除(削除しないと overlayによってマージされていく)
+    @uimanager.remove_ui(@merge_id) if @merge_id
+    @merge_id = @uimanager.add_ui(menu)
+
+    @uimanager.action_groups.each do |ag|
+      ag.actions.each do |a|
+        a.hide_if_empty = false   # デフォルト(true)だと、menuitemのないノードは表示されない
+      end
+    end
+
+    @uimanager.get_action("/MenuBar/file/kill").sensitive = false   # プログラム停止メニューは無効化
+
+    puts "@merge_id = #{@merge_id}"
+  end
+
 end
 
 
@@ -837,7 +1042,7 @@ module Utility
   module_function def get_uniqname
     # ８文字のランダムな文字列を生成
     (1..8).map {
-      (('A'..'Z').to_a + ('a'..'z').to_a + ('0'..'9').to_a).sample
+      [*'A'..'Z', *'a'..'z', *'0'..'9'].sample
     }.join
   end
 end

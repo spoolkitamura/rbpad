@@ -1,49 +1,51 @@
-<menu action='statement'>
-  <menu action='cond'>
-    <menuitem action='if' />
-    <menuitem action='if_else' />
-    <menuitem action='if_elsif_else' />
+<menubar>
+  <menu action="m_0" valid="t">
+    <menu action="m_0:0" valid="t">
+      <menuitem action="mi_0:0:0" valid="t" />
+      <menuitem action="mi_0:0:1" valid="t" />
+      <menuitem action="mi_0:0:2" valid="t" />
+    </menu>
+    <menu action="m_0:1" valid="t">
+      <menuitem action="mi_0:1:0" valid="t" />
+      <menuitem action="mi_0:1:1" valid="t" />
+      <menuitem action="mi_0:1:2" valid="t" />
+      <separator valid="t" />
+      <menuitem action="mi_0:1:4" valid="t" />
+      <menuitem action="mi_0:1:5" valid="t" />
+      <separator valid="t" />
+      <menuitem action="mi_0:1:7" valid="t" />
+      <menuitem action="mi_0:1:8" valid="t" />
+      <menuitem action="mi_0:1:9" valid="t" />
+    </menu>
+    <menu action="m_0:2" valid="t">
+      <menuitem action="mi_0:2:0" valid="t" />
+      <menuitem action="mi_0:2:1" valid="t" />
+      <menuitem action="mi_0:2:2" valid="t" />
+    </menu>
+    <separator valid="t" />
+    <menu action="m_0:4" valid="t">
+      <menuitem action="mi_0:4:0" valid="t" />
+      <menuitem action="mi_0:4:1" valid="t" />
+      <menuitem action="mi_0:4:2" valid="t" />
+      <menuitem action="mi_0:4:3" valid="t" />
+      <separator valid="t" />
+      <menuitem action="mi_0:4:5" valid="t" />
+      <menuitem action="mi_0:4:6" valid="t" />
+    </menu>
   </menu>
-  <menu action='loop'>
-    <menuitem action='times' />
-    <menuitem action='while' />
-    <menuitem action='until' />
-    <separator />
-    <menuitem action='a_each' />
-    <menuitem action='a_each_with' />
-    <separator />
-    <menuitem action='h_each' />
-    <menuitem action='h_each_key' />
-    <menuitem action='h_each_value' />
+  <menu action="m_1" valid="t">
+    <menuitem action="mi_1:0" valid="t" />
+    <menuitem action="mi_1:1" valid="t" />
+    <separator valid="t" />
+    <menuitem action="mi_1:3" valid="t" />
+    <menuitem action="mi_1:4" valid="t" />
+    <menuitem action="mi_1:5" valid="t" />
+    <menuitem action="mi_1:6" valid="t" />
+    <separator valid="t" />
+    <menuitem action="mi_1:8" valid="t" />
+    <menuitem action="mi_1:9" valid="t" />
+    <separator valid="t" />
+    <menuitem action="mi_1:11" valid="t" />
+    <separator valid="t" />
   </menu>
-  <menu action='routine'>
-    <menuitem action='def' />
-    <menuitem action='module' />
-    <menuitem action='class' />
-  </menu>
-  <separator />
-  <menu action='data'>
-    <menuitem action='var' />
-    <menuitem action='array' />
-    <menuitem action='array_2d' />
-    <menuitem action='hash' />
-    <separator />
-    <menuitem action='file_read' />
-    <menuitem action='file_write' />
-  </menu>
-</menu>
-<menu action='dxruby'>
-  <menuitem action='dxruby_template1' />
-  <menuitem action='dxruby_template2' />
-  <separator />
-  <menuitem action='window_draw_font' />
-  <menuitem action='window_draw_box_fill' />
-  <menuitem action='window_draw_circle_fill' />
-  <menuitem action='window_draw' />
-  <separator />
-  <menuitem action='sprite_new' />
-  <menuitem action='sprite_collision' />
-    <separator />
-  <menuitem action='input_xy' />
-  <separator />
-</menu>
+</menubar>

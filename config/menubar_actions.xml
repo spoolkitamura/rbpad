@@ -1,16 +1,16 @@
 <menubar_action>
 
-<branch id="statement" desc="基本構文(_I)" />
+<branch id="m_0"  desc="基本構文(_I)" valid="t" />
 
-<branch id="cond"      desc="場合わけ" />
+<branch id="m_0:0"  desc="場合わけ" valid="t" />
 
-<item   id="if"        desc="もし～ならば (if)" acckey="">
+<item id="mi_0:0:0" desc="もし～ならば (if)" acckey=""  valid="t">
 if !条件!
   # 
 end
 </item>
 
-<item   id="if_else"   desc="もし～ならば、そうでなければ (if～else)" acckey="">
+<item id="mi_0:0:1" desc="もし～ならば、そうでなければ (if～else)" acckey=""  valid="t">
 if !条件!
   # 
 else
@@ -18,7 +18,7 @@ else
 end
 </item>
 
-<item   id="if_elsif_else"   desc="もし～ならば、そうでなく～ならば、そうでなければ (if～elsif～else)" acckey="">
+<item id="mi_0:0:2" desc="もし～ならば、そうでなく～ならば、そうでなければ (if～elsif～else)" acckey=""  valid="t">
 if !条件!
   # 
 elsif !条件!
@@ -28,71 +28,71 @@ else
 end
 </item>
 
-<branch id="loop"  desc="繰り返し" />
+<branch id="m_0:1"  desc="繰り返し" valid="t" />
 
-<item id="times"  desc="xx回くりかえす (回数.times)" acckey="">
+<item id="mi_0:1:0" desc="xx回くりかえす (回数.times)" acckey=""  valid="t">
 !回数!.times do |i|
   # 
   puts "#{i}"
 end
 </item>
 
-<item id="while"  desc="～の間くりかえす (while 条件)"  acckey="">
+<item id="mi_0:1:1" desc="～の間くりかえす (while 条件)" acckey=""  valid="t">
 while !条件!
   # 
 end
 </item>
 
-<item id="until"  desc="～になるまでくりかえす (until 条件)" acckey="">
+<item id="mi_0:1:2" desc="～になるまでくりかえす (until 条件)" acckey=""  valid="t">
 until !条件!
   # 
 end
 </item>
 
-<item id="a_each"        desc="配列の中身についてくりかえす (配列.each)" acckey="&lt;shift&gt;&lt;control&gt;E">
+<item id="mi_0:1:4" desc="配列の中身についてくりかえす (配列.each)" acckey="&lt;shift&gt;&lt;control&gt;E"  valid="t">
 !配列!.each do |x|
   # 
   puts "#{x}"
 end
 </item>
 
-<item id="a_each_with"   desc="配列の中身について番号付きでくりかえす (配列.each__with__index)" acckey="">
+<item id="mi_0:1:5" desc="配列の中身について番号付きでくりかえす (配列.each__with__index)" acckey=""  valid="t">
 !配列!.each_with_index do |x, i|
   # 
   puts "#{i}: #{x}"
 end
 </item>
 
-<item id="h_each"        desc="ハッシュの中身のキーと値についてくりかえす (ハッシュ.each)" acckey="">
+<item id="mi_0:1:7" desc="ハッシュの中身のキーと値についてくりかえす (ハッシュ.each)" acckey=""  valid="t">
 !ハッシュ!.each do |k, v|
   # 
   puts "#{k}: #{v}"
 end
 </item>
 
-<item id="h_each_key"    desc="ハッシュの中身のキーについてくりかえす (ハッシュ.each__key)" acckey="">
+<item id="mi_0:1:8" desc="ハッシュの中身のキーについてくりかえす (ハッシュ.each__key)" acckey=""  valid="t">
 !ハッシュ!.each_key do |k|
   # 
   puts "#{k}"
 end
 </item>
 
-<item id="h_each_value"  desc="ハッシュの中身の値についてくりかえす (ハッシュ.each__value)" acckey="">
+<item id="mi_0:1:9" desc="ハッシュの中身の値についてくりかえす (ハッシュ.each__value)" acckey=""  valid="t">
 !ハッシュ!.each_value do |v|
   # 
   puts "#{v}"
 end
 </item>
 
-<branch id="routine"       desc="ルーチンワーク" />
+<branch id="m_0:2"  desc="ルーチンワーク" valid="t" />
 
-<item id="def"           desc="メソッドをつくる (def)" acckey="">
+<item id="mi_0:2:0" desc="メソッドをつくる (def)" acckey=""  valid="t">
 def !メソッド名!
   # 
 end
 </item>
 
-<item id="module"        desc="モジュールをつくる (module)" acckey="">
+<item id="mi_0:2:1" desc="モジュールをつくる (module)" acckey=""  valid="t">
 module !モジュール名!
   # 
   def !メソッド名!
@@ -101,7 +101,7 @@ module !モジュール名!
 end
 </item>
 
-<item id="class"         desc="クラスをつくる (class)" acckey="">
+<item id="mi_0:2:2" desc="クラスをつくる (class)" acckey=""  valid="t">
 class !クラス名!
   # 初期化
   def initialize
@@ -114,30 +114,30 @@ class !クラス名!
 end
 </item>
 
-<branch id="data"          desc="データの管理" />
+<branch id="m_0:4"  desc="データの管理" valid="t" />
 
-<item id="var"           desc="変数 (v = nil)" acckey="">
+<item id="mi_0:4:0" desc="変数 (v = nil)" acckey=""  valid="t">
 v = nil
 </item>
 
-<item id="array"         desc="配列 (v = [ ])" acckey="">
+<item id="mi_0:4:1" desc="配列 (v = [ ])" acckey=""  valid="t">
 v = [10, 20, 30]
 p v
 </item>
 
-<item id="array_2d"       desc="２次元配列 (v = [ [ ], [ ], [ ] ])" acckey="">
+<item id="mi_0:4:2" desc="２次元配列 (v = [ [ ], [ ], [ ] ])" acckey=""  valid="t">
 v = [ [1, 2, 3],
       [4, 5, 6],
       [7, 8, 9] ]
 p v
 </item>
 
-<item id="hash"          desc="ハッシュ (v = { })" acckey="">
-v = {:x => 10, :y => 20, :z => 30}
+<item id="mi_0:4:3" desc="ハッシュ (v = { })" acckey=""  valid="t">
+v = {:x =&gt; 10, :y =&gt; 20, :z =&gt; 30}
 p v
 </item>
 
-<item id="file_read"     desc="ファイルから読みこむ (File.open(&quot;rb&quot;))" acckey="">
+<item id="mi_0:4:5" desc="ファイルから読みこむ (File.open(&quot;rb&quot;))" acckey=""  valid="t">
 File.open("!ファイル名!", "rb") do |f|
   f.each_line do |line|
     puts line
@@ -145,7 +145,7 @@ File.open("!ファイル名!", "rb") do |f|
 end
 </item>
 
-<item id="file_write"    desc="ファイルに書きこむ   (File.open(&quot;wb&quot;))" acckey="">
+<item id="mi_0:4:6" desc="ファイルに書きこむ   (File.open(&quot;wb&quot;))" acckey=""  valid="t">
 File.open("!ファイル名!", "wb") do |f|
   f.puts "data 1"
   f.puts "data 2"
@@ -153,45 +153,86 @@ File.open("!ファイル名!", "wb") do |f|
 end
 </item>
 
+<branch id="m_1"  desc="DXRuby(_G)" valid="t" />
 
-<branch id="dxruby" desc="DXRuby(_G)" />
+<template id="mi_1:0" desc="DXRubyテンプレート(基本)" acckey=""  valid="t">
+require 'dxruby'
 
-<template id="dxruby_template1"      desc="DXRubyテンプレート(基本)"                                acckey="">
-dxruby_template1.rb
+# 初期化
+Window.caption = 'DXRuby Application'
+Window.width   = 640
+Window.height  = 480
+Window.bgcolor = C_BLACK
+Window.x       = 260
+Window.y       = 240
+
+# 描画ループ
+Window.loop do
+  break if Input.key_release?(K_ESCAPE)
+end
+
 </template>
 
-<template id="dxruby_template2"      desc="DXRubyテンプレート(シーンクラス)"                        acckey="">
-dxruby_template2.rb
+<template id="mi_1:1" desc="DXRubyテンプレート(シーンクラス)" acckey=""  valid="t">
+require 'dxruby'
+
+# シーン(場面)クラス
+class Scene
+
+  # 初期化
+  def initialize
+    Window.caption = 'DXRuby Application'
+    Window.width   = 640
+    Window.height  = 480
+    Window.bgcolor = C_BLACK
+    Window.x       = 260
+    Window.y       = 240
+  end
+
+  # 描画ループ
+  def draw
+    Window.loop do
+      break if Input.key_release?(K_ESCAPE)
+    end
+  end
+
+end
+
+
+# シーンを作成して描画
+scene = Scene.new
+scene.draw
+
 </template>
 
-<item id="window_draw_font"          desc="文字を表示する             (Window.draw__font)"          acckey="">
-Window.draw_font(100, 100, "Hello, Ruby", Font.default, {:color => C_YELLOW})
+<item id="mi_1:3" desc="文字を表示する             (Window.draw__font)" acckey=""  valid="t">
+Window.draw_font(100, 100, "Hello, Ruby", Font.default, {:color =&gt; C_YELLOW})
 </item>
 
-<item id="window_draw_box_fill"      desc="四角形を描いて塗りつぶす (Window.draw__box__fill)"       acckey="">
+<item id="mi_1:4" desc="四角形を描いて塗りつぶす (Window.draw__box__fill)" acckey=""  valid="t">
 Window.draw_box_fill(100, 150, 250, 180, C_RED)
 </item>
 
-<item id="window_draw_circle_fill"   desc="円を描いて塗りつぶす       (Window.draw__circle__fill)"  acckey="">
+<item id="mi_1:5" desc="円を描いて塗りつぶす       (Window.draw__circle__fill)" acckey=""  valid="t">
 Window.draw_circle_fill(300, 165, 15, C_RED)
 </item>
 
-<item id="window_draw"               desc="画像を表示する             (Window.draw)"                acckey="">
+<item id="mi_1:6" desc="画像を表示する             (Window.draw)" acckey=""  valid="t">
 Window.draw(0, 20, Image.load("!画像ファイル名!"))
 </item>
 
-<item id="sprite_new"                desc="スプライトを作成して表示する (Sprite.new / Sprite.draw)" acckey="">
+<item id="mi_1:8" desc="スプライトを作成して表示する (Sprite.new / Sprite.draw)" acckey=""  valid="t">
 s = Sprite.new(400, 100, Image.new(50, 50, C_GREEN))
 s.draw
 </item>
 
-<item id="sprite_collision"          desc="スプライトの衝突判定をする   (===)"                      acckey="">
+<item id="mi_1:9" desc="スプライトの衝突判定をする   (===)" acckey=""  valid="t">
 if s === ss
   # 
 end
 </item>
 
-<item id="input_xy"                  desc="カーソルキーで値を変化させる (Input.x / Input.y)"        acckey="">
+<item id="mi_1:11" desc="カーソルキーで値を変化させる (Input.x / Input.y)" acckey=""  valid="t">
 x = x + Input.x
 y = y + Input.y
 </item>

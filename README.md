@@ -48,22 +48,23 @@ Rubyのプログラミング講座で初心者をフォローをする際、フ�
 
     <任意のディレクトリ>
        |   rbpad.rb
+       |   rbpad_conf.rb
        |   rbpad.vbs
        |   rbpad_debug.cmd
+       |   history.txt
+       |   README.md
        |
        +-- config/
        |      menubar.xml
        |      menubar_actions.xml
        |      reference_uri.xml
        |
-       +-- template/
-       |      dxruby_template1.rb
-       |      dxruby_template2.rb
-       |
        +-- doc/
               rbpad_instllation_guide.pdf
               rbpad_starter_guide.pdf
+              rbpad_costomization_guide.pdf
               rbpad_structure.pdf
+              rbpad_pamphlet.pdf
 
 ■起動
 --------
