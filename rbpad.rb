@@ -8,10 +8,11 @@
     Version :
       0.5.0 (2018/01/28)
       0.6.0 (2018/03/10)
+      0.6.1 (2018/04/14)
 
 =end
 
-$VER = "0.6.0"
+$VER = "0.6.1"
 
 require 'gtk2'
 require 'drb/drb'
@@ -21,28 +22,67 @@ require 'rexml/document'
 require_relative 'rbpad_conf'
 
 
-# スクロールバー付きテキストバッファ
-class Widget_ScrolledText < Gtk::ScrolledWindow
-  def initialize
-    super
-    @view   = Gtk::TextView.new
-    @view.modify_font(Pango::FontDescription.new("MS Gothic 12"))
-    @view.left_margin        = 4
+# スクロールバー付き行番号ありテキストバッファ
+class Widget_ScrolledNumberingText < Gtk::ScrolledWindow
+
+  FontDefault = Pango::FontDescription.new("MS Gothic 12")
+
+  def initialize(border_size = 0)
+    super()
+
+    @view   = Gtk::TextView.new                                                        # テキストビュー
+    @view.modify_font(FontDefault)                                                     # フォント設定
+    @view.left_margin        = 6
     @view.pixels_above_lines = 2
     @view.pixels_below_lines = 1
     @view.accepts_tab        = false    # TABキーはフォーカス移動
     self.add(@view)
+
+    if border_size > 0
+      # @num非生成のときに後続の参照処理等で不具合生じない？■
+      @num = Gtk::TextView.new                                                         # 行番号用テキストビュー
+      @num.modify_font(FontDefault)                                                    # フォント設定
+      @num.modify_text(Gtk::STATE_NORMAL, Gdk::Color.new(0x7000, 0x8000, 0x9000))
+      @num.editable = false                                                            # 編集不可
+
+      @num.left_margin        = 4
+      @num.right_margin       = 3
+      @num.pixels_above_lines = 2
+      @num.pixels_below_lines = 1
+
+      @view.set_border_window_size(Gtk::TextView::WINDOW_LEFT, border_size)        # ボーダーウィンドウ(左サイド)を作成
+      @view.add_child_in_window(@num, Gtk::TextView::WINDOW_LEFT, 0, 0)            # ボーダーウィンドウ(左サイド)に行番号用のテキストビューを追加
+      @view.modify_bg(Gtk::STATE_NORMAL, Gdk::Color.new(0x7000, 0x8000, 0x9000))   # 隙間を着色して罫線に見立て
+      _line_number
+    end
   end
+
+  def line_number
+    _line_number
+  end
+
+  private def _line_number
+    # 行番号表示
+    number = ""
+    (@view.buffer.line_count + 100).times do |i|
+      if i < @view.buffer.line_count
+        number += "%4d\n" % ((i + 1) % 10000)           # 行番号表示(4桁固定)
+      else
+        number += "%4s\n" % ""
+      end
+    end
+    @num.buffer.text = number
+  end
+
 end
 
 
 # エディタ用ページ
-class Widget_Page < Widget_ScrolledText
-
+class Widget_Page < Widget_ScrolledNumberingText
   attr_reader :status, :dirname, :basename
 
   def initialize(status_area)
-    super()
+    super(40)
 
     @status   = :EMPTY
     @dirname  = nil
@@ -80,7 +120,7 @@ class Widget_Page < Widget_ScrolledText
     end
 
 
-    @view.signal_connect("key-press-event") do |widget, event|
+    @view.signal_connect("key_press_event") do |widget, event|
       # キー押下シグナル
       if event.state.control_mask? and event.keyval == Gdk::Keyval::GDK_z
         _undo   # [Ctrl]-[Z] (UNDO処理)
@@ -88,6 +128,21 @@ class Widget_Page < Widget_ScrolledText
 
       if event.state.control_mask? and event.keyval == Gdk::Keyval::GDK_y
         _redo   # [Ctrl]-[Y] (REDO処理)
+      end
+
+      if event.state.control_mask? and event.keyval == Gdk::Keyval::GDK_v
+        # rich_text(書式付きテキスト)を textに変換
+        #   rich_textのままだと、異なる書式の境界でペースト処理が分割されて
+        #   膨大なイベント(insert_text)が発生してしまうため、暫定対処
+        content = ""
+        clipboard = @view.get_clipboard(Gdk::Selection::CLIPBOARD)
+        clipboard.request_text do |board, text, data|
+          content += text if text                        # nilのときは何もしない
+        end
+        unless content == ""
+          #clipboard.clear
+          clipboard.text = content
+        end
       end
 
       if event.keyval == Gdk::Keyval::GDK_Return
@@ -121,6 +176,7 @@ class Widget_Page < Widget_ScrolledText
     end
 
     @view.buffer.signal_connect("insert_text") do |widget, iter, text, length|
+#puts("[S] insert_text #{text.length}")
       # テキスト挿入前に発行されるシグナル
       if @undo_swt
         # UNDO用スタックに追加
@@ -134,14 +190,21 @@ class Widget_Page < Widget_ScrolledText
       end
     end
 
+    self.vadjustment.signal_connect("value_changed") do
+      @view.move_child(@num, 0, -self.vadjustment.value)                # 行番号も同期スクロール
+    end
+
     @view.buffer.signal_connect("changed") do |widget|
       # バッファ変更後に発行されるシグナル
       # puts "changed"
       @status = :UNSAVED                                 # 編集ステータスを変更
+      self.line_number                                   # 行番号表示
       _tokenize                                          # タグ設定用の字句解析
       _display_status
     end
+
   end
+
 
   # UNDO/REDO処理で操作対象を削除
   private def _do_del(action)
@@ -258,11 +321,14 @@ class Widget_Page < Widget_ScrolledText
     # 既存のタグをすべて削除
     @view.buffer.remove_all_tags(@view.buffer.start_iter, @view.buffer.end_iter)
 
+    # 500行を超える場合はシンタックスハイライト機能を抑止(暫定)■
+    return if @view.buffer.line_count > 500
+
     # タグの適用
     str = @view.buffer.get_text(@view.buffer.start_iter, @view.buffer.end_iter, true)
     wordlist = _parse(str)
     wordlist.each do |x|
-      @view.buffer.apply_tag(x[:tag].to_s,
+      @view.buffer.apply_tag(x[:tag],
                              @view.buffer.get_iter_at_offset(x[:pos]),
                              @view.buffer.get_iter_at_offset(x[:pos] + x[:len]))
       # puts "#{x[:tag]} (#{x[:word]}) #{x[:pos]} #{x[:len]} (#{str[x[:pos], x[:len]]})"
@@ -276,15 +342,15 @@ class Widget_Page < Widget_ScrolledText
       tag = nil
       case str
       when /()(\!.*\!)()/
-        tag = :user                          # ユーザ可変箇所(ツール独自書式)
+        tag = 'user'                         # ユーザ可変箇所(ツール独自書式)
       when /()(#.*$)()/
-        tag = :comment                       # コメント
+        tag = 'comment'                      # コメント
       when /()(".+?")()/, /()('.+?')()/
-        tag = :string                        # 文字列
+        tag = 'string'                       # 文字列
       when /()([A-Z][A-Za-z0-9_]+)()/
-        tag = :const                         # 定数
+        tag = 'const'                        # 定数
       when /(^|\s)(begin|end|if|else|elsif|then|unless|case|when|while|until|for|break|next|return|do|require|require_relative|def|module|class)(\s|$)/
-        tag = :reserved                      # 予約語
+        tag = 'reserved'                     # 予約語
       end
 
       if tag
@@ -417,7 +483,7 @@ end
 
 
 # 実行結果出力画面
-class Widget_OutputScreen < Widget_ScrolledText
+class Widget_OutputScreen < Widget_ScrolledNumberingText
 
   def initialize
     super
@@ -428,7 +494,7 @@ class Widget_OutputScreen < Widget_ScrolledText
 
   # 最下行にテキストを挿入
   def add_tail(text, tag = nil)
-    @view.buffer.insert(@view.buffer.end_iter, text)
+    @view.buffer.insert(@view.buffer.end_iter, text.scrub)
     unless tag == nil                                         # 指定されたタグの書式で表示
       iter_s = @view.buffer.get_iter_at_offset(@view.buffer.end_iter.offset - text.size)
       iter_e = @view.buffer.end_iter
@@ -552,6 +618,7 @@ class Pad < Gtk::Window
         <menu action='file'>
           <menuitem action='run' />
           <menuitem action='kill' />
+          <menuitem action='info' />
           <separator />
           <menuitem action='new' />
           <menuitem action='open' />
@@ -601,6 +668,7 @@ class Pad < Gtk::Window
       ["file",         nil,                    "ファイル(_F)"],
       ["run",          Gtk::Stock::EXECUTE,    "プログラムを実行する",          "<control>R",        nil, Proc.new{ _exec }],
       ["kill",         Gtk::Stock::MEDIA_STOP, "実行中のプログラムを止める",    nil,                 nil, Proc.new{ _kill }],
+      ["info",         Gtk::Stock::INFO,       "プログラムの情報を表示する",    "<control>I",        nil, Proc.new{ _info }],
       ["new",          Gtk::Stock::NEW,        "プログラムを新しく作る",        nil,                 nil, Proc.new{ _new }],
       ["open",         Gtk::Stock::OPEN,       "プログラムを読みこむ...",       nil,                 nil, Proc.new{ _open }],
       ["save",         Gtk::Stock::SAVE,       "プログラムを保存する",          nil,                 nil, Proc.new{ _save }],
@@ -779,6 +847,16 @@ class Pad < Gtk::Window
     return tmpfilepath                     # 一時ファイルのフルパス
   end
 
+  private def _info
+    dirname, basename, tabname, status = @editor.get_page_properties
+    # 情報表示
+    @console_output.add_tail("[#{tabname}]\n")
+    @console_output.add_tail(" 状態         : #{status}\n")
+    @console_output.add_tail(" ディレクトリ : #{dirname}\n")
+    @console_output.add_tail(" ファイル名   : #{basename}\n\n")
+    @console_output.scroll_tail                      # 最下行までスクロール
+  end
+
   # Rubyバージョン表示
   private def _ruby_ver
     thread = Thread.start do
@@ -796,7 +874,7 @@ class Pad < Gtk::Window
   # rbpadについて
   private def _about
     msg = <<-"EOS".gsub(/^\s+/, '')
-      rbpad.rb (ver. #{$VER})
+      rbpad (ver. #{$VER})
       Copyright (c) 2018 Koki Kitamura
       This program is licensed under the same license as Ruby-GNOME2.
     EOS
@@ -839,7 +917,7 @@ class Pad < Gtk::Window
     dialog.run do |res|
       if res == Gtk::Dialog::RESPONSE_ACCEPT
         filename = dialog.filename.gsub('\\', '/')  # /foo/bar/zzz
-        @editor.load(filename)                      # 指定パスからファイルを読み込み
+        @editor.load(filename) if File.exists?(filename)   # 指定パスからファイルを読み込み(存在しない場合のダイアログ表示保留■)
       end
     end
     dialog.destroy
