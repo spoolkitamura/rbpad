@@ -9,6 +9,7 @@
       0.5.0 (2018/01/28)
       0.6.0 (2018/03/10)
       0.6.1 (2018/04/14)
+      0.6.2 (2018/05/19)
 
 =end
 
@@ -492,6 +493,11 @@ class Widget_OutputScreen < Widget_ScrolledNumberingText
     @view.set_editable(false)
   end
 
+  # 行頭以外の場合のみ改行
+  def newline
+    @view.buffer.insert(@view.buffer.end_iter, "\n") unless @view.buffer.end_iter.starts_line?
+  end
+
   # 最下行にテキストを挿入
   def add_tail(text, tag = nil)
     @view.buffer.insert(@view.buffer.end_iter, text.scrub)
@@ -774,6 +780,7 @@ class Pad < Gtk::Window
         @q << io = IO.popen(cmd, err: [:child, :out])                                                     # 標準エラー出力を標準出力にマージ
         io.each do |line|
           line.gsub!(run_filename, tabname)                                                               # 出力用に一時ファイル名をタブ名に置換
+          line.gsub!("\x03\n", "")         # print非改行対応                                                               # print非改行対応("\x03"付きの改行は削除)
           @console_output.add_tail(line, "result")                                                        # 最下行に挿入
           @console_output.scroll_tail                                                                     # 最下行までスクロール
         end
@@ -786,6 +793,7 @@ class Pad < Gtk::Window
         Dir.chdir(current_dir)
 
         # 実行終了メッセージ
+        @console_output.newline            # 行頭でない場合は改行を挿入   
         @console_output.add_tail("> end  : #{tabname} (#{Time.now.strftime('%H:%M:%S')})\n\n", "info")    # 最下行に挿入
         @console_output.scroll_tail                                                                       # 最下行までスクロール
 
@@ -837,6 +845,12 @@ class Pad < Gtk::Window
       $stdout.sync = true
       $stderr.sync = true
       $stdin, $in = IO.pipe
+      module Kernel
+        alias_method :__print__, :print
+        def print(*args)
+          __print__(*args, "\x03\n")       # print非改行対応
+        end
+      end             
       DRb.start_service("druby://localhost:#{@drb_portno}", $in)
     EOS
     basename = "rq_#{Utility::get_uniqname}.rb"
